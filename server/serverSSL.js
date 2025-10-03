@@ -6,6 +6,7 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors'); // Ajout du middleware CORS
+var secvar = require ('./secret.vars');
 
 const app = express();
 app.use(express.json());
@@ -62,7 +63,7 @@ app.post('/login', (req, res) => {
     if (!isMatch) {
       return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
     }
-    const token = jwt.sign({ id: user.id, email: user.email }, 'secret_key_change_moi', { expiresIn: '1h' });
+    const token = jwt.sign({ id: user.id, email: user.email }, secvar.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   });
   // Commentaire : Vérifie les credentials et renvoie un token JWT.

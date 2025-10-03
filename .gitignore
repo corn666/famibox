@@ -1,23 +1,48 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Dépendances
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
-.DS_Store
+# Variables d'environnement (CRITIQUE !)
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+server/.env
 
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+# Base de données SQLite
+*.db
+*.sqlite
+*.sqlite3
+server/users.db
+
+# Fichiers de build
+build/
+dist/
+.cache/
+
+# Fichiers IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Certificats SSL (si stockés localement)
+*.pem
+*.key
+*.crt
+
+# Fichiers temporaires
+tmp/
+temp/
