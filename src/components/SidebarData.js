@@ -5,8 +5,8 @@ import * as RiIcons from 'react-icons/ri';
 
 export const SidebarData = [
   {
-    title: 'Appels',
-    path: 'appels',
+    title: 'Contacts',
+    path: 'contacts',
     icon: <IoIcons.IoIosCall />,
     iconClosed: <RiIcons.RiArrowDownSFill />,
     iconOpened: <RiIcons.RiArrowUpSFill />,
@@ -26,4 +26,3 @@ export const SidebarData = [
     iconOpened: <RiIcons.RiArrowUpSFill />,
   },
 ];
-// Commentaire : Liste des éléments du menu avec des paths simplifiés pour la navigation par état.
