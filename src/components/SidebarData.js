@@ -5,7 +5,7 @@ import * as RiIcons from 'react-icons/ri';
 
 export const SidebarData = [
   {
-    title: 'Contacts',
+    title: 'Appel',
     path: 'contacts',
     icon: <IoIcons.IoIosCall />,
     iconClosed: <RiIcons.RiArrowDownSFill />,

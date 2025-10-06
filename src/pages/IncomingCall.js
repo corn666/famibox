@@ -210,7 +210,6 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
       
       <CallerAvatar>{getInitials(callerName)}</CallerAvatar>
       <CallerName>{callerName || 'Contact'}</CallerName>
-      <CallerEmail>{callerEmail}</CallerEmail>
       <CallStatus>Appel entrant{dots}</CallStatus>
       
       <ButtonContainer>
