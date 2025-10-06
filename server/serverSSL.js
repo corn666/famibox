@@ -8,10 +8,32 @@ const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: 'https://famibox.cazapp.fr' }));
+
+// Configuration CORS améliorée pour supporter le développement local
+const allowedOrigins = [
+  'https://famibox.cazapp.fr',
+  'http://localhost:3000',
+  'http://localhost:3001'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Autoriser les requêtes sans origin (comme Postman, curl, etc.)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 
 // Vérifier que JWT_SECRET est défini
 if (!process.env.JWT_SECRET) {
@@ -19,15 +41,53 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
-// Charger les certificats SSL (chemins en dur comme tu préfères)
+// Configuration du stockage multer
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, './uploads/');
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.random().toString(36).substring(7);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|mp4|mov|avi/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Type de fichier non autorisé'));
+  }
+});
+
+// Créer le dossier uploads s'il n'existe pas
+const uploadsDir = './uploads';
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+  console.log('✅ Dossier uploads créé');
+}
+
+// Charger les certificats SSL
 const options = {
   cert: fs.readFileSync('/etc/ssl/certs/fullchain.pem'),
   key: fs.readFileSync('/home/caza/ssl/private/ssl-priv.key')
 };
 
 const server = https.createServer(options, app);
+
+// Configuration Socket.IO avec CORS amélioré
 const io = socketIo(server, {
-  cors: { origin: 'https://famibox.cazapp.fr' }
+  cors: {
+    origin: allowedOrigins,
+    credentials: true
+  }
 });
 
 // Initialiser la base de données SQLite
@@ -64,6 +124,28 @@ db.serialize(() => {
       console.error('❌ Erreur création table contacts:', err);
     } else {
       console.log('✅ Table contacts prête');
+    }
+  });
+
+  // Table media_shares
+  db.run(`CREATE TABLE IF NOT EXISTS media_shares (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id INTEGER NOT NULL,
+    sender_email TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    viewed BOOLEAN DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    viewed_at DATETIME,
+    FOREIGN KEY (sender_id) REFERENCES users(id)
+  )`, (err) => {
+    if (err) {
+      console.error('❌ Erreur création table media_shares:', err);
+    } else {
+      console.log('✅ Table media_shares prête');
     }
   });
 });
@@ -148,7 +230,6 @@ app.post('/login', (req, res) => {
         return res.status(400).json({ error: 'Email ou mot de passe incorrect' });
       }
 
-      // Utiliser JWT_SECRET depuis secret.vars
       const token = jwt.sign(
         { id: user.id, email: user.email },
         process.env.JWT_SECRET,
@@ -245,6 +326,235 @@ app.delete('/api/contacts/:id', verifyToken, (req, res) => {
 });
 
 // ============================================
+// ROUTES GESTION PHOTOS/VIDÉOS - VERSION CORRIGÉE
+// ============================================
+
+// Upload de médias
+app.post('/api/media/upload', verifyToken, upload.array('files', 10), async (req, res) => {
+  try {
+    const { recipientEmail } = req.body;
+    const senderId = req.user.id;
+    const senderEmail = req.user.email;
+
+    if (!recipientEmail || !req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'Destinataire et fichiers requis' });
+    }
+
+    // Vérifier que le destinataire existe
+    db.get("SELECT id FROM users WHERE email = ?", [recipientEmail], async (err, recipient) => {
+      if (err || !recipient) {
+        // Supprimer les fichiers uploadés
+        req.files.forEach(file => {
+          fs.unlinkSync(file.path);
+        });
+        return res.status(400).json({ error: 'Destinataire non trouvé' });
+      }
+
+      // Insérer les enregistrements dans la base
+      const insertPromises = req.files.map(file => {
+        return new Promise((resolve, reject) => {
+          db.run(
+            `INSERT INTO media_shares (sender_id, sender_email, recipient_email, filename, original_name, file_type, file_size)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [senderId, senderEmail, recipientEmail, file.filename, file.originalname, file.mimetype, file.size],
+            function(err) {
+              if (err) reject(err);
+              else resolve(this.lastID);
+            }
+          );
+        });
+      });
+
+      try {
+        const mediaIds = await Promise.all(insertPromises);
+        console.log(`✅ ${req.files.length} fichier(s) partagé(s) vers ${recipientEmail}`);
+
+        // Notifier le destinataire s'il est connecté
+        const recipientSocketId = connectedUsers.get(recipientEmail);
+        if (recipientSocketId) {
+          io.to(recipientSocketId).emit('new-media-notification', {
+            senderEmail,
+            count: req.files.length
+          });
+        }
+
+        res.json({
+          success: true,
+          message: `${req.files.length} fichier(s) partagé(s)`,
+          mediaIds
+        });
+      } catch (error) {
+        console.error('Erreur insertion médias:', error);
+        res.status(500).json({ error: 'Erreur lors du partage' });
+      }
+    });
+  } catch (error) {
+    console.error('Erreur upload:', error);
+    res.status(500).json({ error: 'Erreur lors de l\'upload' });
+  }
+});
+
+// Récupérer les médias reçus
+app.get('/api/media/received', verifyToken, (req, res) => {
+  const userEmail = req.user.email;
+
+  db.all(
+    `SELECT id, sender_email, filename, original_name, file_type, file_size, viewed, created_at, viewed_at
+     FROM media_shares
+     WHERE recipient_email = ?
+     ORDER BY created_at DESC`,
+    [userEmail],
+    (err, media) => {
+      if (err) {
+        console.error('Erreur récupération médias:', err);
+        return res.status(500).json({ error: 'Erreur serveur' });
+      }
+      res.json(media);
+    }
+  );
+});
+
+// Récupérer les médias non consultés
+app.get('/api/media/unviewed-count', verifyToken, (req, res) => {
+  const userEmail = req.user.email;
+
+  db.get(
+    "SELECT COUNT(*) as count FROM media_shares WHERE recipient_email = ? AND viewed = 0",
+    [userEmail],
+    (err, result) => {
+      if (err) {
+        console.error('Erreur comptage médias non vus:', err);
+        return res.status(500).json({ error: 'Erreur serveur' });
+      }
+      res.json({ count: result.count });
+    }
+  );
+});
+
+// Télécharger un média
+app.get('/api/media/download/:id', verifyToken, (req, res) => {
+  const mediaId = req.params.id;
+  const userEmail = req.user.email;
+
+  db.get(
+    "SELECT * FROM media_shares WHERE id = ? AND recipient_email = ?",
+    [mediaId, userEmail],
+    (err, media) => {
+      if (err) {
+        console.error('Erreur récupération média:', err);
+        return res.status(500).json({ error: 'Erreur serveur' });
+      }
+
+      if (!media) {
+        return res.status(404).json({ error: 'Média non trouvé' });
+      }
+
+      const filePath = path.join(__dirname, 'uploads', media.filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Fichier non trouvé' });
+      }
+
+      res.download(filePath, media.original_name);
+    }
+  );
+});
+
+// Marquer un média comme consulté
+app.post('/api/media/mark-viewed/:id', verifyToken, (req, res) => {
+  const mediaId = req.params.id;
+  const userEmail = req.user.email;
+
+  db.get(
+    "SELECT * FROM media_shares WHERE id = ? AND recipient_email = ?",
+    [mediaId, userEmail],
+    (err, media) => {
+      if (err || !media) {
+        return res.status(404).json({ error: 'Média non trouvé' });
+      }
+
+      // Si déjà consulté, ne rien faire
+      if (media.viewed) {
+        return res.json({ success: true, alreadyViewed: true });
+      }
+
+      // Marquer comme consulté
+      db.run(
+        "UPDATE media_shares SET viewed = 1, viewed_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [mediaId],
+        (err) => {
+          if (err) {
+            console.error('Erreur marquage média:', err);
+            return res.status(500).json({ error: 'Erreur serveur' });
+          }
+
+          console.log(`✅ Média ${mediaId} marqué comme consulté`);
+
+          // Notifier l'expéditeur
+          const senderSocketId = connectedUsers.get(media.sender_email);
+          if (senderSocketId) {
+            io.to(senderSocketId).emit('media-viewed-notification', {
+              recipientEmail: userEmail,
+              originalName: media.original_name
+            });
+          }
+
+          res.json({ success: true });
+        }
+      );
+    }
+  );
+});
+
+// NOUVELLE ROUTE : Streaming avec token dans l'URL (query string)
+app.get('/api/media/stream/:id', (req, res) => {
+  const mediaId = req.params.id;
+  const token = req.query.token; // Token passé en query string
+
+  if (!token) {
+    return res.status(401).json({ error: 'Token manquant' });
+  }
+
+  // Vérifier le token
+  let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (error) {
+    return res.status(401).json({ error: 'Token invalide' });
+  }
+
+  const userEmail = decoded.email;
+
+  db.get(
+    "SELECT * FROM media_shares WHERE id = ? AND recipient_email = ?",
+    [mediaId, userEmail],
+    (err, media) => {
+      if (err) {
+        console.error('Erreur récupération média:', err);
+        return res.status(500).json({ error: 'Erreur serveur' });
+      }
+
+      if (!media) {
+        return res.status(404).json({ error: 'Média non trouvé' });
+      }
+
+      const filePath = path.join(__dirname, 'uploads', media.filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Fichier non trouvé' });
+      }
+
+      // Définir le bon Content-Type
+      res.setHeader('Content-Type', media.file_type);
+      res.setHeader('Cache-Control', 'public, max-age=31536000'); // Cache 1 an
+      
+      // Envoyer le fichier
+      res.sendFile(filePath);
+    }
+  );
+});
+
+// ============================================
 // SIGNALISATION WEBRTC AVEC SOCKET.IO
 // ============================================
 
@@ -272,6 +582,16 @@ io.on('connection', (socket) => {
   // Enregistrer l'utilisateur connecté
   connectedUsers.set(socket.user.email, socket.id);
   console.log('👥 Utilisateurs connectés:', connectedUsers.size);
+
+  // Diffuser à tous que cet utilisateur est en ligne
+  socket.broadcast.emit('user-online', socket.user.email);
+
+  // Quand un client demande la liste des utilisateurs en ligne
+  socket.on('request-online-users', () => {
+    const onlineEmails = Array.from(connectedUsers.keys());
+    socket.emit('online-users-list', onlineEmails);
+    console.log('📋 Liste des utilisateurs en ligne envoyée à', socket.user.email);
+  });
 
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
@@ -332,13 +652,18 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call-ended', (data) => {
-    console.log(`📴 Appel terminé par ${socket.id}`);
+    console.log(`🔴 Appel terminé par ${socket.id}`);
     socket.to(data.roomId).emit('call-ended');
   });
 
   socket.on('disconnect', () => {
     console.log('🔴 Peer déconnecté :', socket.id, '- User:', socket.user.email);
-    connectedUsers.delete(socket.user.email);
+    const userEmail = socket.user.email;
+    connectedUsers.delete(userEmail);
+
+    // Diffuser à tous que cet utilisateur est hors ligne
+    socket.broadcast.emit('user-offline', userEmail);
+
     console.log('👥 Utilisateurs connectés:', connectedUsers.size);
   });
 });
@@ -348,11 +673,13 @@ io.on('connection', (socket) => {
 // ============================================
 const PORT = 3000;
 server.listen(PORT, () => {
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('┌────────────────────────────────────────┐');
   console.log('🚀 Serveur HTTPS Famibox démarré !');
   console.log(`📡 Port: ${PORT}`);
-  console.log(`🔒 JWT Secret: ${process.env.JWT_SECRET ? '✅ Configuré' : '❌ MANQUANT'}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`🔐 JWT Secret: ${process.env.JWT_SECRET ? '✅ Configuré' : '❌ MANQUANT'}`);
+  console.log(`📁 Dossier uploads: ${fs.existsSync(uploadsDir) ? '✅ Prêt' : '❌ Manquant'}`);
+  console.log('🌐 CORS activé pour développement local');
+  console.log('└────────────────────────────────────────┘');
 });
 
 // Gestion propre de l'arrêt du serveur

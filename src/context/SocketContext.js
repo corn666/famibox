@@ -8,10 +8,11 @@ export const SocketProvider = ({ children }) => {
   const socketRef = useRef(null);
   const [isConnected, setIsConnected] = useState(false);
   const [incomingCall, setIncomingCall] = useState(null);
+  const [newMediaNotification, setNewMediaNotification] = useState(null);
+  const [mediaViewedNotification, setMediaViewedNotification] = useState(null);
   const { user } = useContext(AuthContext);
 
   useEffect(() => {
-    // Connecter le socket dès qu'un utilisateur est authentifié
     if (user && !socketRef.current) {
       const token = localStorage.getItem('token');
       
@@ -46,21 +47,48 @@ export const SocketProvider = ({ children }) => {
       });
 
       socketRef.current.on('call-ended', () => {
-        console.log('📴 Appel terminé par l\'autre partie');
+        console.log('🔴 Appel terminé par l\'autre partie');
+      });
+
+      // Nouvelles notifications pour les médias
+      socketRef.current.on('new-media-notification', (data) => {
+        console.log('📸 Nouveaux médias reçus:', data);
+        setNewMediaNotification(data);
+        
+        // Afficher une notification visuelle
+        if (Notification.permission === 'granted') {
+          new Notification('Nouveaux médias reçus !', {
+            body: `${data.senderEmail} vous a envoyé ${data.count} fichier(s)`,
+            icon: '/logo192.png'
+          });
+        }
+      });
+
+      socketRef.current.on('media-viewed-notification', (data) => {
+        console.log('👁️ Média consulté:', data);
+        setMediaViewedNotification(data);
+        
+        // Afficher une notification
+        if (Notification.permission === 'granted') {
+          new Notification('Média consulté', {
+            body: `${data.recipientEmail} a consulté votre fichier "${data.originalName}"`,
+            icon: '/logo192.png'
+          });
+        }
       });
     }
 
-    // Déconnecter le socket si l'utilisateur se déconnecte
     if (!user && socketRef.current) {
       console.log('👋 Déconnexion du socket');
       socketRef.current.disconnect();
       socketRef.current = null;
       setIsConnected(false);
       setIncomingCall(null);
+      setNewMediaNotification(null);
+      setMediaViewedNotification(null);
     }
 
     return () => {
-      // Nettoyage lors du démontage du composant
       if (socketRef.current && !user) {
         socketRef.current.disconnect();
         socketRef.current = null;
@@ -68,8 +96,23 @@ export const SocketProvider = ({ children }) => {
     };
   }, [user]);
 
+  // Demander la permission pour les notifications
+  useEffect(() => {
+    if (user && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, [user]);
+
   const clearIncomingCall = () => {
     setIncomingCall(null);
+  };
+
+  const clearMediaNotification = () => {
+    setNewMediaNotification(null);
+  };
+
+  const clearViewedNotification = () => {
+    setMediaViewedNotification(null);
   };
 
   return (
@@ -78,7 +121,11 @@ export const SocketProvider = ({ children }) => {
         socket: socketRef.current, 
         isConnected,
         incomingCall,
-        clearIncomingCall
+        clearIncomingCall,
+        newMediaNotification,
+        clearMediaNotification,
+        mediaViewedNotification,
+        clearViewedNotification
       }}
     >
       {children}

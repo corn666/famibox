@@ -1,6 +1,6 @@
 import './App.css';
 import Sidebar from './components/Sidebar';
-import { Photos } from './pages/Famille';
+import { Photos } from './pages/Photos';
 import { Sante } from './pages/Sante';
 import VideoCall from './pages/VideoCall';
 import Contacts from './pages/Contacts';
@@ -8,15 +8,56 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Home from './pages/Home';
 import IncomingCall from './pages/IncomingCall';
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { AuthContext, AuthProvider } from './context/AuthContext';
 import { SocketProvider, SocketContext } from './context/SocketContext';
+import { CallProvider, useCall } from './context/CallContext';
+import styled from 'styled-components';
+
+const NotificationBanner = styled.div`
+  position: fixed;
+  top: 100px;
+  right: 20px;
+  background: linear-gradient(135deg, #632ce4, #9d50bb);
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 15px rgba(99, 44, 228, 0.5);
+  z-index: 2500;
+  animation: slideIn 0.3s ease;
+  cursor: pointer;
+  max-width: 350px;
+
+  @keyframes slideIn {
+    from {
+      transform: translateX(400px);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+`;
+
+const NotificationTitle = styled.h3`
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+`;
+
+const NotificationMessage = styled.p`
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.9;
+`;
 
 function App() {
   return (
     <AuthProvider>
       <SocketProvider>
-        <AppContent />
+        <CallProvider>
+          <AppContent />
+        </CallProvider>
       </SocketProvider>
     </AuthProvider>
   );
@@ -25,20 +66,53 @@ function App() {
 const AppContent = () => {
   const [sidebar, setSidebar] = useState(false);
   const [currentPage, setCurrentPage] = useState('login');
-  const [callData, setCallData] = useState(null);
   const { user } = useContext(AuthContext);
-  const { incomingCall, clearIncomingCall } = useContext(SocketContext);
+  const { isInCall, callData, startCall, endCall } = useCall();
+  const { 
+    incomingCall, 
+    clearIncomingCall,
+    newMediaNotification,
+    clearMediaNotification,
+    mediaViewedNotification,
+    clearViewedNotification
+  } = useContext(SocketContext);
 
   const toggleSidebar = () => setSidebar(!sidebar);
   const openSidebar = () => setSidebar(true);
 
+  // Vérifier si l'utilisateur est déjà connecté au chargement
+  useEffect(() => {
+    if (user && currentPage === 'login') {
+      setCurrentPage('home');
+      openSidebar();
+    }
+  }, [user]);
+
+  // Auto-masquer les notifications après 5 secondes
+  useEffect(() => {
+    if (newMediaNotification) {
+      const timer = setTimeout(() => {
+        clearMediaNotification();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [newMediaNotification, clearMediaNotification]);
+
+  useEffect(() => {
+    if (mediaViewedNotification) {
+      const timer = setTimeout(() => {
+        clearViewedNotification();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [mediaViewedNotification, clearViewedNotification]);
+
   const handleAcceptCall = () => {
-    // Passer les données de l'appel entrant à VideoCall
-    setCallData({
+    startCall({
       roomId: incomingCall.roomId,
       contactEmail: incomingCall.callerEmail,
       contactName: incomingCall.callerName,
-      isCaller: false, // C'est nous qui recevons l'appel
+      isCaller: false,
       isIncoming: true
     });
     clearIncomingCall();
@@ -47,6 +121,16 @@ const AppContent = () => {
 
   const handleDeclineCall = () => {
     clearIncomingCall();
+  };
+
+  const handleMediaNotificationClick = () => {
+    setCurrentPage('photos');
+    clearMediaNotification();
+  };
+
+  const handleEndCall = () => {
+    endCall();
+    setCurrentPage('contacts');
   };
 
   const renderPage = () => {
@@ -71,9 +155,23 @@ const AppContent = () => {
       case 'home':
         return <Home sidebar={sidebar} />;
       case 'appels':
-        return <VideoCall sidebar={sidebar} callData={callData} setCurrentPage={setCurrentPage} />;
+        return (
+          <VideoCall 
+            sidebar={sidebar}
+            setCurrentPage={setCurrentPage}
+            onEndCall={handleEndCall}
+            isPiP={false}
+          />
+        );
       case 'contacts':
-        return <Contacts sidebar={sidebar} setCurrentPage={setCurrentPage} setCallData={setCallData} />;
+        return (
+          <Contacts 
+            sidebar={sidebar} 
+            setCurrentPage={setCurrentPage} 
+            setCallData={startCall}
+            isInCall={isInCall}
+          />
+        );
       case 'photos':
         return <Photos sidebar={sidebar} />;
       case 'sante':
@@ -90,6 +188,37 @@ const AppContent = () => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Sidebar sidebar={sidebar} toggleSidebar={toggleSidebar} setCurrentPage={setCurrentPage} />
+      
+      {/* Notifications pour nouveaux médias */}
+      {newMediaNotification && (
+        <NotificationBanner onClick={handleMediaNotificationClick}>
+          <NotificationTitle>📸 Nouveaux médias reçus !</NotificationTitle>
+          <NotificationMessage>
+            {newMediaNotification.senderEmail} vous a envoyé {newMediaNotification.count} fichier(s)
+          </NotificationMessage>
+        </NotificationBanner>
+      )}
+
+      {/* Notification de consultation */}
+      {mediaViewedNotification && (
+        <NotificationBanner onClick={clearViewedNotification}>
+          <NotificationTitle>👁️ Média consulté</NotificationTitle>
+          <NotificationMessage>
+            {mediaViewedNotification.recipientEmail} a consulté "{mediaViewedNotification.originalName}"
+          </NotificationMessage>
+        </NotificationBanner>
+      )}
+
+      {/* Appel en Picture-in-Picture si on est en appel mais pas sur la page appels */}
+      {isInCall && currentPage !== 'appels' && (
+        <VideoCall 
+          sidebar={sidebar}
+          setCurrentPage={setCurrentPage}
+          onEndCall={handleEndCall}
+          isPiP={true}
+        />
+      )}
+
       <div
         style={{
           marginLeft: sidebar ? '150px' : '0',

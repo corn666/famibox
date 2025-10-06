@@ -2,6 +2,8 @@ import React, { useState, useEffect, useContext } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
+import { SocketContext } from '../context/SocketContext';
+import * as FaIcons from 'react-icons/fa';
 
 const Container = styled.div`
   padding: 2rem;
@@ -36,6 +38,23 @@ const AddButton = styled.button`
   }
 `;
 
+const InCallWarning = styled.div`
+  background: linear-gradient(135deg, #f39c12, #e67e22);
+  color: #fff;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
+
+  &::before {
+    content: '📞';
+    font-size: 1.5rem;
+  }
+`;
+
 const ContactsGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -48,14 +67,42 @@ const ContactCard = styled.div`
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
-  cursor: pointer;
+  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   transition: all 0.3s ease;
   border: 2px solid transparent;
+  position: relative;
+  opacity: ${props => props.disabled ? 0.5 : 1};
 
   &:hover {
-    transform: translateY(-5px);
-    border-color: #632ce4;
-    box-shadow: 0 8px 20px rgba(99, 44, 228, 0.3);
+    transform: ${props => props.disabled ? 'none' : 'translateY(-5px)'};
+    border-color: ${props => props.disabled ? 'transparent' : '#632ce4'};
+    box-shadow: ${props => props.disabled ? 'none' : '0 8px 20px rgba(99, 44, 228, 0.3)'};
+  }
+`;
+
+const OnlineStatus = styled.div`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: ${props => props.online ? '#27ae60' : '#e74c3c'};
+  box-shadow: 0 0 10px ${props => props.online ? 'rgba(39, 174, 96, 0.8)' : 'rgba(231, 76, 60, 0.8)'};
+  border: 2px solid #1a1d24;
+  z-index: 10;
+  
+  ${props => props.online && `
+    animation: pulse 2s ease-in-out infinite;
+  `}
+
+  @keyframes pulse {
+    0%, 100% {
+      box-shadow: 0 0 10px rgba(39, 174, 96, 0.8);
+    }
+    50% {
+      box-shadow: 0 0 20px rgba(39, 174, 96, 1);
+    }
   }
 `;
 
@@ -86,19 +133,37 @@ const ContactEmail = styled.p`
   word-break: break-word;
 `;
 
-const DeleteButton = styled.button`
-  background: #e74c3c;
+const StatusText = styled.p`
+  color: ${props => props.online ? '#27ae60' : '#888'};
+  margin: 0.5rem 0 0 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+`;
+
+const DeleteIcon = styled.div`
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(231, 76, 60, 0.9);
   color: #fff;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 5px;
-  cursor: pointer;
-  margin-top: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 0.9rem;
-  transition: background 0.3s ease;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  z-index: 10;
 
   &:hover {
-    background: #c0392b;
+    background: #e74c3c;
+    transform: scale(1.1);
+  }
+
+  &:active {
+    transform: scale(0.95);
   }
 `;
 
@@ -192,16 +257,49 @@ const EmptyState = styled.div`
   color: #666;
 `;
 
-const Contacts = ({ sidebar, setCurrentPage, setCallData }) => {
+const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   const [contacts, setContacts] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [newContact, setNewContact] = useState({ email: '', prenom: '' });
   const [error, setError] = useState('');
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
   const { user } = useContext(AuthContext);
+  const { socket } = useContext(SocketContext);
 
   useEffect(() => {
     loadContacts();
   }, []);
+
+  useEffect(() => {
+    if (socket) {
+      socket.emit('request-online-users');
+
+      socket.on('online-users-list', (users) => {
+        console.log('Liste des utilisateurs en ligne:', users);
+        setOnlineUsers(new Set(users));
+      });
+
+      socket.on('user-online', (email) => {
+        console.log('Utilisateur en ligne:', email);
+        setOnlineUsers(prev => new Set([...prev, email]));
+      });
+
+      socket.on('user-offline', (email) => {
+        console.log('Utilisateur hors ligne:', email);
+        setOnlineUsers(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(email);
+          return newSet;
+        });
+      });
+
+      return () => {
+        socket.off('online-users-list');
+        socket.off('user-online');
+        socket.off('user-offline');
+      };
+    }
+  }, [socket]);
 
   const loadContacts = async () => {
     try {
@@ -261,10 +359,14 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData }) => {
   };
 
   const handleCallContact = (contact) => {
-    // Générer un roomId unique basé sur les IDs des utilisateurs
+    // Empêcher de lancer un nouvel appel si déjà en appel
+    if (isInCall) {
+      alert('Vous êtes déjà en appel. Raccrochez d\'abord avant d\'en démarrer un nouveau.');
+      return;
+    }
+
     const roomId = `room-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
-    // Passer les données d'appel au parent
     setCallData({
       roomId,
       contactEmail: contact.email,
@@ -272,12 +374,15 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData }) => {
       isCaller: true
     });
     
-    // Naviguer vers la page d'appel
     setCurrentPage('appels');
   };
 
   const getInitials = (prenom) => {
     return prenom.substring(0, 2).toUpperCase();
+  };
+
+  const isContactOnline = (contactEmail) => {
+    return onlineUsers.has(contactEmail);
   };
 
   return (
@@ -289,6 +394,17 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData }) => {
         </AddButton>
       </Header>
 
+      {isInCall && (
+        <InCallWarning>
+          <div>
+            <strong>Appel en cours</strong>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.9rem' }}>
+              Vous êtes actuellement en appel. La vignette vidéo est visible en bas à droite.
+            </p>
+          </div>
+        </InCallWarning>
+      )}
+
       {contacts.length === 0 ? (
         <EmptyState>
           <h2>Aucun contact pour le moment</h2>
@@ -297,12 +413,20 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData }) => {
       ) : (
         <ContactsGrid>
           {contacts.map((contact) => (
-            <ContactCard key={contact.id} onClick={() => handleCallContact(contact)}>
+            <ContactCard 
+              key={contact.id} 
+              onClick={() => handleCallContact(contact)}
+              disabled={isInCall}
+            >
+              <OnlineStatus online={isContactOnline(contact.email)} />
               <Avatar>{getInitials(contact.prenom)}</Avatar>
               <ContactName>{contact.prenom}</ContactName>
-              <DeleteButton onClick={(e) => handleDeleteContact(contact.id, e)}>
-                Supprimer
-              </DeleteButton>
+              <StatusText online={isContactOnline(contact.email)}>
+                {isContactOnline(contact.email) ? 'En ligne' : 'Hors ligne'}
+              </StatusText>
+              <DeleteIcon onClick={(e) => handleDeleteContact(contact.id, e)}>
+                <FaIcons.FaTrash />
+              </DeleteIcon>
             </ContactCard>
           ))}
         </ContactsGrid>

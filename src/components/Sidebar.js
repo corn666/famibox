@@ -72,6 +72,13 @@ const UserIcon = styled.span`
   align-items: center;
 `;
 
+const Username = styled.span`
+  color: #fff;
+  font-size: 1rem;
+  margin-left: 0.5rem;
+  font-weight: 500;
+`;
+
 const SidebarNav = styled.nav`
   background: #15171c;
   width: 150px;
@@ -92,6 +99,12 @@ const SidebarWrap = styled.div`
 const Sidebar = ({ sidebar, toggleSidebar, setCurrentPage }) => {
   const { user, logout } = useContext(AuthContext);
 
+  // Extraire le nom d'utilisateur (partie avant le @)
+  const getUserName = () => {
+    if (!user || !user.email) return '';
+    return user.email.split('@')[0];
+  };
+
   return (
     <IconContext.Provider value={{ color: '#fff' }}>
       <Nav>
@@ -105,6 +118,7 @@ const Sidebar = ({ sidebar, toggleSidebar, setCurrentPage }) => {
             <>
               <UserIcon>
                 <FaIcons.FaUser />
+                <Username>{getUserName()}</Username>
               </UserIcon>
               <LogoutButton onClick={() => {
                 logout();
@@ -130,7 +144,6 @@ const Sidebar = ({ sidebar, toggleSidebar, setCurrentPage }) => {
       </SidebarNav>
     </IconContext.Provider>
   );
-  // Commentaire : Barre de navigation avec gestion des pages via setCurrentPage, sans changer l'URL.
 };
 
 export default Sidebar;
