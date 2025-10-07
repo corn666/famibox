@@ -560,6 +560,8 @@ app.get('/api/media/stream/:id', (req, res) => {
 
 // Map pour suivre les utilisateurs connectés (email -> socket.id)
 const connectedUsers = new Map();
+// Map pour suivre les rooms actives (roomId -> [email1, email2])
+const activeRooms = new Map();
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -596,6 +598,16 @@ io.on('connection', (socket) => {
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📞 ${socket.id} (${socket.user.email}) a rejoint la room: ${roomId}`);
+    
+    // Enregistrer la room active
+    if (!activeRooms.has(roomId)) {
+      activeRooms.set(roomId, []);
+    }
+    const roomUsers = activeRooms.get(roomId);
+    if (!roomUsers.includes(socket.user.email)) {
+      roomUsers.push(socket.user.email);
+    }
+    
     socket.to(roomId).emit('user-connected', socket.id);
   });
 
@@ -652,18 +664,33 @@ io.on('connection', (socket) => {
   });
 
   socket.on('call-ended', (data) => {
-    console.log(`🔴 Appel terminé par ${socket.id}`);
+    console.log(`🔴 Appel terminé par ${socket.id} dans room ${data.roomId}`);
     socket.to(data.roomId).emit('call-ended');
+    
+    // Nettoyer la room
+    if (activeRooms.has(data.roomId)) {
+      activeRooms.delete(data.roomId);
+      console.log(`🧹 Room ${data.roomId} nettoyée`);
+    }
   });
 
   socket.on('disconnect', () => {
     console.log('🔴 Peer déconnecté :', socket.id, '- User:', socket.user.email);
     const userEmail = socket.user.email;
     connectedUsers.delete(userEmail);
-
+    
+    // Nettoyer toutes les rooms où l'utilisateur était présent
+    activeRooms.forEach((users, roomId) => {
+      if (users.includes(userEmail)) {
+        console.log(`🔴 Déconnexion brutale détectée - Notification des participants de room ${roomId}`);
+        socket.to(roomId).emit('call-ended');
+        activeRooms.delete(roomId);
+      }
+    });
+    
     // Diffuser à tous que cet utilisateur est hors ligne
     socket.broadcast.emit('user-offline', userEmail);
-
+    
     console.log('👥 Utilisateurs connectés:', connectedUsers.size);
   });
 });
