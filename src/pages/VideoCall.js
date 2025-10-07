@@ -147,16 +147,28 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
         contextEndCall();
         
         setTimeout(() => {
+          setCallEnded(false); // Reset pour permettre un nouvel appel
           if (setCurrentPage) {
             setCurrentPage('contacts');
           }
         }, 4000);
       };
+
+      const handleUserUnavailable = (data) => {
+        console.log('❌ Utilisateur non disponible:', data.targetEmail);
+        alert(`${data.targetEmail} n'est pas disponible actuellement`);
+        contextEndCall();
+        if (setCurrentPage) {
+          setCurrentPage('contacts');
+        }
+      };
       
       socket.on('call-ended', handleCallEnded);
+      socket.on('user-unavailable', handleUserUnavailable);
       
       return () => {
         socket.off('call-ended', handleCallEnded);
+        socket.off('user-unavailable', handleUserUnavailable);
       };
     }
   }, [socket, contextEndCall, setCurrentPage]);

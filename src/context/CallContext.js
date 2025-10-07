@@ -1,4 +1,4 @@
-import React, { createContext, useState, useRef, useContext } from 'react';
+import React, { createContext, useState, useRef, useContext, useEffect } from 'react';
 
 export const CallContext = createContext();
 
@@ -14,29 +14,55 @@ export const CallProvider = ({ children }) => {
   const callStartedRef = useRef(false);
   const hasSetupConnectionRef = useRef(false);
 
-  const startCall = (data) => {
-    setCallData(data);
-    setIsInCall(true);
-  };
+  // Nettoyer complètement au chargement de la page (en cas de rafraîchissement pendant un appel)
+  useEffect(() => {
+    console.log('🔄 CallContext initialisé - Nettoyage des ressources');
+    cleanupResources();
+  }, []);
 
-  const endCall = () => {
+  const cleanupResources = () => {
     // Nettoyer les streams
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('🛑 Track local arrêté:', track.kind);
+      });
       localStreamRef.current = null;
     }
     if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach(track => track.stop());
+      screenStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('🛑 Track écran arrêté:', track.kind);
+      });
       screenStreamRef.current = null;
     }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
+      console.log('🛑 PeerConnection fermée');
       peerConnectionRef.current = null;
+    }
+    if (remoteStreamRef.current) {
+      remoteStreamRef.current = null;
     }
 
     // Réinitialiser les refs
     callStartedRef.current = false;
     hasSetupConnectionRef.current = false;
+
+    console.log('✅ Ressources nettoyées');
+  };
+
+  const startCall = (data) => {
+    console.log('📞 Démarrage d\'un nouvel appel');
+    // S'assurer que tout est nettoyé avant de commencer un nouvel appel
+    cleanupResources();
+    setCallData(data);
+    setIsInCall(true);
+  };
+
+  const endCall = () => {
+    console.log('🔴 Fin d\'appel - Nettoyage');
+    cleanupResources();
 
     // Réinitialiser les states
     setIsInCall(false);
