@@ -562,6 +562,8 @@ app.get('/api/media/stream/:id', (req, res) => {
 const connectedUsers = new Map();
 // Map pour suivre les rooms actives (roomId -> [email1, email2])
 const activeRooms = new Map();
+// Map pour suivre les utilisateurs en appel (email -> roomId)
+const usersInCall = new Map();
 
 io.use((socket, next) => {
   const token = socket.handshake.auth.token;
@@ -595,6 +597,13 @@ io.on('connection', (socket) => {
     console.log('📋 Liste des utilisateurs en ligne envoyée à', socket.user.email);
   });
 
+  // Quand un client demande la liste des utilisateurs en appel
+  socket.on('request-users-in-call', () => {
+    const usersInCallList = Array.from(usersInCall.keys());
+    socket.emit('users-in-call-list', usersInCallList);
+    console.log('📞 Liste des utilisateurs en appel envoyée à', socket.user.email);
+  });
+
   socket.on('join-room', (roomId) => {
     socket.join(roomId);
     console.log(`📞 ${socket.id} (${socket.user.email}) a rejoint la room: ${roomId}`);
@@ -609,6 +618,19 @@ io.on('connection', (socket) => {
     }
     
     socket.to(roomId).emit('user-connected', socket.id);
+  });
+
+  // Marquer l'utilisateur comme "en appel"
+  socket.on('call-started', (data) => {
+    const { roomId } = data;
+    usersInCall.set(socket.user.email, roomId);
+    console.log(`📞 ${socket.user.email} est maintenant en appel (room: ${roomId})`);
+    
+    // Diffuser à tous que cet utilisateur est en appel
+    socket.broadcast.emit('user-call-status-changed', {
+      email: socket.user.email,
+      inCall: true
+    });
   });
 
   // Gérer l'initiation d'un appel
@@ -667,10 +689,59 @@ io.on('connection', (socket) => {
     console.log(`🔴 Appel terminé par ${socket.id} dans room ${data.roomId}`);
     socket.to(data.roomId).emit('call-ended');
     
+    // Retirer l'utilisateur de la liste "en appel"
+    if (usersInCall.has(socket.user.email)) {
+      usersInCall.delete(socket.user.email);
+      console.log(`✅ ${socket.user.email} n'est plus en appel`);
+      
+      // Diffuser à tous que cet utilisateur n'est plus en appel
+      socket.broadcast.emit('user-call-status-changed', {
+        email: socket.user.email,
+        inCall: false
+      });
+    }
+    
     // Nettoyer la room
     if (activeRooms.has(data.roomId)) {
+      const roomUsers = activeRooms.get(data.roomId);
+      // Retirer tous les utilisateurs de cette room de la liste "en appel"
+      roomUsers.forEach(email => {
+        if (usersInCall.has(email)) {
+          usersInCall.delete(email);
+          // Notifier tout le monde
+          io.emit('user-call-status-changed', {
+            email: email,
+            inCall: false
+          });
+        }
+      });
       activeRooms.delete(data.roomId);
       console.log(`🧹 Room ${data.roomId} nettoyée`);
+    }
+  });
+
+  // Gérer l'annulation d'appel (avant que l'autre décroche)
+  socket.on('cancel-call', (data) => {
+    const { targetEmail, roomId } = data;
+    console.log(`❌ Appel annulé par ${socket.user.email} vers ${targetEmail}`);
+    
+    const targetSocketId = connectedUsers.get(targetEmail);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('call-cancelled', { roomId });
+      console.log(`✅ Notification d'annulation envoyée à ${targetEmail}`);
+      
+      // Enregistrer comme appel manqué
+      io.to(targetSocketId).emit('missed-call', {
+        callerEmail: socket.user.email,
+        callerName: socket.user.email.split('@')[0],
+        timestamp: new Date().toISOString()
+      });
+      console.log(`📵 Appel manqué enregistré pour ${targetEmail}`);
+    }
+    
+    // Nettoyer la room si elle existe
+    if (activeRooms.has(roomId)) {
+      activeRooms.delete(roomId);
     }
   });
 
@@ -679,11 +750,33 @@ io.on('connection', (socket) => {
     const userEmail = socket.user.email;
     connectedUsers.delete(userEmail);
     
+    // Retirer l'utilisateur de la liste "en appel"
+    if (usersInCall.has(userEmail)) {
+      usersInCall.delete(userEmail);
+      // Diffuser à tous
+      io.emit('user-call-status-changed', {
+        email: userEmail,
+        inCall: false
+      });
+    }
+    
     // Nettoyer toutes les rooms où l'utilisateur était présent
     activeRooms.forEach((users, roomId) => {
       if (users.includes(userEmail)) {
         console.log(`🔴 Déconnexion brutale détectée - Notification des participants de room ${roomId}`);
         socket.to(roomId).emit('call-ended');
+        
+        // Retirer tous les utilisateurs de cette room de la liste "en appel"
+        users.forEach(email => {
+          if (usersInCall.has(email)) {
+            usersInCall.delete(email);
+            io.emit('user-call-status-changed', {
+              email: email,
+              inCall: false
+            });
+          }
+        });
+        
         activeRooms.delete(roomId);
       }
     });
@@ -692,6 +785,7 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('user-offline', userEmail);
     
     console.log('👥 Utilisateurs connectés:', connectedUsers.size);
+    console.log('📞 Utilisateurs en appel:', usersInCall.size);
   });
 });
 

@@ -63,20 +63,30 @@ const ContactsGrid = styled.div`
 `;
 
 const ContactCard = styled.div`
-  background: linear-gradient(145deg, #1a1d24, #15171c);
+  background: ${props => props.hasMissedCall 
+    ? 'linear-gradient(145deg, #4c4f57ff, #1f2228)' 
+    : 'linear-gradient(145deg, #1a1d24, #15171c)'};
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   transition: all 0.3s ease;
-  border: 2px solid transparent;
+  border: 2px solid ${props => props.hasMissedCall ? '#6c757d' : 'transparent'};
   position: relative;
   opacity: ${props => props.disabled ? 0.5 : 1};
 
   &:hover {
     transform: ${props => props.disabled ? 'none' : 'translateY(-5px)'};
-    border-color: ${props => props.disabled ? 'transparent' : '#632ce4'};
-    box-shadow: ${props => props.disabled ? 'none' : '0 8px 20px rgba(99, 44, 228, 0.3)'};
+    border-color: ${props => {
+      if (props.disabled) return 'transparent';
+      if (props.hasMissedCall) return '#95a5a6';
+      return '#632ce4';
+    }};
+    box-shadow: ${props => {
+      if (props.disabled) return 'none';
+      if (props.hasMissedCall) return '0 8px 20px rgba(108, 117, 125, 0.3)';
+      return '0 8px 20px rgba(99, 44, 228, 0.3)';
+    }};
   }
 `;
 
@@ -87,12 +97,20 @@ const OnlineStatus = styled.div`
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: ${props => props.online ? '#27ae60' : '#e74c3c'};
-  box-shadow: 0 0 10px ${props => props.online ? 'rgba(39, 174, 96, 0.8)' : 'rgba(231, 76, 60, 0.8)'};
+  background: ${props => {
+    if (props.status === 'inCall') return '#f39c12'; // Orange
+    if (props.status === 'online') return '#27ae60'; // Vert
+    return '#e74c3c'; // Rouge
+  }};
+  box-shadow: 0 0 10px ${props => {
+    if (props.status === 'inCall') return 'rgba(243, 156, 18, 0.8)';
+    if (props.status === 'online') return 'rgba(39, 174, 96, 0.8)';
+    return 'rgba(231, 76, 60, 0.8)';
+  }};
   border: 2px solid #1a1d24;
   z-index: 10;
   
-  ${props => props.online && `
+  ${props => props.status === 'online' && `
     animation: pulse 2s ease-in-out infinite;
   `}
 
@@ -134,10 +152,22 @@ const ContactEmail = styled.p`
 `;
 
 const StatusText = styled.p`
-  color: ${props => props.online ? '#27ae60' : '#888'};
+  color: ${props => {
+    if (props.status === 'inCall') return '#f39c12';
+    if (props.status === 'online') return '#27ae60';
+    return '#888';
+  }};
   margin: 0.5rem 0 0 0;
   font-size: 0.75rem;
   font-weight: 500;
+`;
+
+const MissedCallText = styled.p`
+  color: #6c757d;
+  margin: 0.5rem 0 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-style: italic;
 `;
 
 const DeleteIcon = styled.div`
@@ -263,20 +293,51 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   const [newContact, setNewContact] = useState({ email: '', prenom: '' });
   const [error, setError] = useState('');
   const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [usersInCall, setUsersInCall] = useState(new Set());
+  const [missedCalls, setMissedCalls] = useState({}); // Nouveau state : { email: { timestamp, callerName } }
   const { user } = useContext(AuthContext);
   const { socket } = useContext(SocketContext);
 
   useEffect(() => {
     loadContacts();
+    
+    // Charger les appels manqués depuis localStorage
+    const loadMissedCalls = () => {
+      const savedMissedCalls = localStorage.getItem('missedCalls');
+      if (savedMissedCalls) {
+        console.log('📵 Appels manqués chargés:', savedMissedCalls);
+        setMissedCalls(JSON.parse(savedMissedCalls));
+      }
+    };
+    
+    loadMissedCalls();
+    
+    // Écouter les mises à jour des appels manqués
+    const handleMissedCallUpdate = () => {
+      console.log('🔄 Mise à jour des appels manqués détectée');
+      loadMissedCalls();
+    };
+    
+    window.addEventListener('missedCallUpdated', handleMissedCallUpdate);
+    
+    return () => {
+      window.removeEventListener('missedCallUpdated', handleMissedCallUpdate);
+    };
   }, []);
 
   useEffect(() => {
     if (socket) {
       socket.emit('request-online-users');
+      socket.emit('request-users-in-call'); // Demander aussi les utilisateurs en appel
 
       socket.on('online-users-list', (users) => {
         console.log('Liste des utilisateurs en ligne:', users);
         setOnlineUsers(new Set(users));
+      });
+
+      socket.on('users-in-call-list', (users) => {
+        console.log('Liste des utilisateurs en appel:', users);
+        setUsersInCall(new Set(users));
       });
 
       socket.on('user-online', (email) => {
@@ -291,12 +352,34 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
           newSet.delete(email);
           return newSet;
         });
+        // Retirer aussi de la liste "en appel" si présent
+        setUsersInCall(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(email);
+          return newSet;
+        });
+      });
+
+      // Écouter les changements de statut d'appel
+      socket.on('user-call-status-changed', (data) => {
+        console.log('Statut d\'appel changé:', data);
+        if (data.inCall) {
+          setUsersInCall(prev => new Set([...prev, data.email]));
+        } else {
+          setUsersInCall(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(data.email);
+            return newSet;
+          });
+        }
       });
 
       return () => {
         socket.off('online-users-list');
+        socket.off('users-in-call-list');
         socket.off('user-online');
         socket.off('user-offline');
+        socket.off('user-call-status-changed');
       };
     }
   }, [socket]);
@@ -365,6 +448,14 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
       return;
     }
 
+    // Effacer l'appel manqué quand on rappelle
+    if (missedCalls[contact.email]) {
+      const newMissedCalls = { ...missedCalls };
+      delete newMissedCalls[contact.email];
+      setMissedCalls(newMissedCalls);
+      localStorage.setItem('missedCalls', JSON.stringify(newMissedCalls));
+    }
+
     const roomId = `room-${Date.now()}-${Math.random().toString(36).substring(7)}`;
     
     setCallData({
@@ -383,6 +474,27 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
 
   const isContactOnline = (contactEmail) => {
     return onlineUsers.has(contactEmail);
+  };
+
+  const isContactInCall = (contactEmail) => {
+    return usersInCall.has(contactEmail);
+  };
+
+  const getContactStatus = (contactEmail) => {
+    if (isContactInCall(contactEmail)) return 'inCall';
+    if (isContactOnline(contactEmail)) return 'online';
+    return 'offline';
+  };
+
+  const formatMissedCallTime = (timestamp) => {
+    const date = new Date(timestamp);
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}h${minutes}`;
+  };
+
+  const hasMissedCall = (contactEmail) => {
+    return missedCalls[contactEmail] !== undefined;
   };
 
   return (
@@ -412,23 +524,34 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
         </EmptyState>
       ) : (
         <ContactsGrid>
-          {contacts.map((contact) => (
-            <ContactCard 
-              key={contact.id} 
-              onClick={() => handleCallContact(contact)}
-              disabled={isInCall}
-            >
-              <OnlineStatus online={isContactOnline(contact.email)} />
-              <Avatar>{getInitials(contact.prenom)}</Avatar>
-              <ContactName>{contact.prenom}</ContactName>
-              <StatusText online={isContactOnline(contact.email)}>
-                {isContactOnline(contact.email) ? 'En ligne' : 'Hors ligne'}
-              </StatusText>
-              <DeleteIcon onClick={(e) => handleDeleteContact(contact.id, e)}>
-                <FaIcons.FaTrash />
-              </DeleteIcon>
-            </ContactCard>
-          ))}
+          {contacts.map((contact) => {
+            const status = getContactStatus(contact.email);
+            const missed = hasMissedCall(contact.email);
+            return (
+              <ContactCard 
+                key={contact.id} 
+                onClick={() => handleCallContact(contact)}
+                disabled={isInCall}
+                hasMissedCall={missed}
+              >
+                <OnlineStatus status={status} />
+                <Avatar>{getInitials(contact.prenom)}</Avatar>
+                <ContactName>{contact.prenom}</ContactName>
+                {missed ? (
+                  <MissedCallText>
+                    Appel manqué à {formatMissedCallTime(missedCalls[contact.email].timestamp)}
+                  </MissedCallText>
+                ) : (
+                  <StatusText status={status}>
+                    {status === 'inCall' ? 'En appel' : status === 'online' ? 'En ligne' : 'Hors ligne'}
+                  </StatusText>
+                )}
+                <DeleteIcon onClick={(e) => handleDeleteContact(contact.id, e)}>
+                  <FaIcons.FaTrash />
+                </DeleteIcon>
+              </ContactCard>
+            );
+          })}
         </ContactsGrid>
       )}
 

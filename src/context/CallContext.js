@@ -5,6 +5,7 @@ export const CallContext = createContext();
 export const CallProvider = ({ children }) => {
   const [isInCall, setIsInCall] = useState(false);
   const [callData, setCallData] = useState(null);
+  const [isCallConnected, setIsCallConnected] = useState(false); // Nouveau state
   
   // Refs pour persister les streams et connexions entre les rendus
   const localStreamRef = useRef(null);
@@ -48,6 +49,7 @@ export const CallProvider = ({ children }) => {
     // Réinitialiser les refs
     callStartedRef.current = false;
     hasSetupConnectionRef.current = false;
+    setIsCallConnected(false);
 
     console.log('✅ Ressources nettoyées');
   };
@@ -58,6 +60,12 @@ export const CallProvider = ({ children }) => {
     cleanupResources();
     setCallData(data);
     setIsInCall(true);
+    setIsCallConnected(false); // Pas encore connecté
+  };
+
+  const markCallAsConnected = () => {
+    console.log('✅ Appel marqué comme connecté (flux établi)');
+    setIsCallConnected(true);
   };
 
   const endCall = () => {
@@ -67,6 +75,7 @@ export const CallProvider = ({ children }) => {
     // Réinitialiser les states
     setIsInCall(false);
     setCallData(null);
+    setIsCallConnected(false);
   };
 
   return (
@@ -74,8 +83,10 @@ export const CallProvider = ({ children }) => {
       value={{
         isInCall,
         callData,
+        isCallConnected,
         startCall,
         endCall,
+        markCallAsConnected,
         localStreamRef,
         remoteStreamRef,
         peerConnectionRef,

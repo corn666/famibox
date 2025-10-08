@@ -14,6 +14,43 @@ import { SocketProvider, SocketContext } from './context/SocketContext';
 import { CallProvider, useCall } from './context/CallContext';
 import styled from 'styled-components';
 
+// Fonction helper pour gérer les appels manqués
+const useMissedCallsHandler = () => {
+  const { socket } = useContext(SocketContext);
+
+  useEffect(() => {
+    if (socket) {
+      const handleMissedCall = (data) => {
+        console.log('📵 Appel manqué reçu dans App.js:', data);
+        
+        // Récupérer les appels manqués existants
+        const savedMissedCalls = localStorage.getItem('missedCalls');
+        const missedCalls = savedMissedCalls ? JSON.parse(savedMissedCalls) : {};
+        
+        // Ajouter le nouvel appel manqué
+        missedCalls[data.callerEmail] = {
+          timestamp: data.timestamp,
+          callerName: data.callerName
+        };
+        
+        // Sauvegarder
+        localStorage.setItem('missedCalls', JSON.stringify(missedCalls));
+        console.log('✅ Appel manqué sauvegardé dans localStorage');
+        
+        // Émettre un événement personnalisé pour que Contacts.js se mette à jour
+        window.dispatchEvent(new CustomEvent('missedCallUpdated'));
+      };
+
+      socket.on('missed-call', handleMissedCall);
+      console.log('👂 Écoute des appels manqués activée dans App.js');
+
+      return () => {
+        socket.off('missed-call', handleMissedCall);
+      };
+    }
+  }, [socket]);
+};
+
 const NotificationBanner = styled.div`
   position: fixed;
   top: 100px;
@@ -69,6 +106,7 @@ const AppContent = () => {
   const { user } = useContext(AuthContext);
   const { isInCall, callData, startCall, endCall } = useCall();
   const { 
+    socket,
     incomingCall, 
     clearIncomingCall,
     newMediaNotification,
@@ -79,6 +117,25 @@ const AppContent = () => {
 
   const toggleSidebar = () => setSidebar(!sidebar);
   const openSidebar = () => setSidebar(true);
+
+  // Activer la gestion des appels manqués
+  useMissedCallsHandler();
+
+  // Écouter l'annulation d'appel
+  useEffect(() => {
+    if (socket) {
+      const handleCallCancelled = (data) => {
+        console.log('❌ Appel annulé par l\'appelant');
+        clearIncomingCall();
+      };
+      
+      socket.on('call-cancelled', handleCallCancelled);
+      
+      return () => {
+        socket.off('call-cancelled', handleCallCancelled);
+      };
+    }
+  }, [socket, clearIncomingCall]);
 
   // Vérifier si l'utilisateur est déjà connecté au chargement
   useEffect(() => {
