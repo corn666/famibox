@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { SocketContext } from '../context/SocketContext';
 import { AuthContext } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
+import CallingScreen from './CallingScreen';
 
 const PiPContainer = styled.div`
   position: fixed;
@@ -89,6 +90,8 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
   const { user } = useContext(AuthContext);
   const {
     callData,
+    isCallConnected,
+    markCallAsConnected,
     localStreamRef,
     remoteStreamRef,
     peerConnectionRef,
@@ -101,15 +104,27 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
   const [streamUpdate, setStreamUpdate] = useState(0); // Pour forcer le re-render
+  const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false); // Nouveau state
 
   const roomId = callData?.roomId;
   const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
   const endCall = useCallback(() => {
-    console.log('Ending call...');
+    console.log('🔴 End call - isCallConnected:', isCallConnected);
     
-    if (socket) {
-      socket.emit('call-ended', { roomId });
+    if (socket && roomId) {
+      // Si l'appel n'est pas encore connecté (pas de flux vidéo établi), c'est une annulation
+      if (!isCallConnected && callData) {
+        console.log('📤 Envoi cancel-call vers', callData.contactEmail);
+        socket.emit('cancel-call', { 
+          targetEmail: callData.contactEmail,
+          roomId 
+        });
+      } else {
+        // Sinon c'est un vrai appel qui se termine
+        console.log('📤 Envoi call-ended');
+        socket.emit('call-ended', { roomId });
+      }
     }
     
     contextEndCall();
@@ -117,7 +132,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
     if (onEndCall) {
       onEndCall();
     }
-  }, [socket, roomId, contextEndCall, onEndCall]);
+  }, [socket, roomId, isCallConnected, contextEndCall, onEndCall, callData]);
 
   // Attacher les streams aux éléments vidéo quand ils sont prêts
   useEffect(() => {
@@ -193,6 +208,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
 
     try {
       callStartedRef.current = true;
+      setIsWaitingForAnswer(true); // Afficher l'écran d'attente
       console.log('📞 Initiation de l\'appel vers:', callData.contactEmail);
 
       socket.emit('call-user', {
@@ -259,6 +275,14 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
       if (event.streams && event.streams[0]) {
         console.log('📺 Setting remote stream');
         remoteStreamRef.current = event.streams[0];
+        
+        // Marquer l'appel comme connecté dès qu'on reçoit le flux distant
+        markCallAsConnected();
+        setIsWaitingForAnswer(false); // Masquer l'écran d'attente
+        
+        // Notifier le serveur que l'appel est établi
+        socket.emit('call-started', { roomId });
+        
         setStreamUpdate(prev => prev + 1); // Forcer le re-render pour attacher le stream
       }
     };
@@ -370,6 +394,16 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
       <div style={{ padding: '2rem', color: '#fff' }}>
         <h2>Connexion au serveur...</h2>
       </div>
+    );
+  }
+
+  // Afficher l'écran d'attente si on attend que l'autre décroche
+  if (isWaitingForAnswer && callData && !isPiP) {
+    return (
+      <CallingScreen 
+        contactName={callData.contactName}
+        onCancel={endCall}
+      />
     );
   }
 
