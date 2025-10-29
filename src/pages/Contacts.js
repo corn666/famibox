@@ -50,7 +50,7 @@ const InCallWarning = styled.div`
   box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
 
   &::before {
-    content: '📞';
+    content: 'ðŸ“ž';
     font-size: 1.5rem;
   }
 `;
@@ -64,27 +64,28 @@ const ContactsGrid = styled.div`
 
 const ContactCard = styled.div`
   background: ${props => props.hasMissedCall 
-    ? 'linear-gradient(145deg, #4c4f57ff, #1f2228)' 
+    ? 'linear-gradient(145deg, #e67e22, #d35400)' 
     : 'linear-gradient(145deg, #1a1d24, #15171c)'};
   border-radius: 12px;
   padding: 1.5rem;
   text-align: center;
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   transition: all 0.3s ease;
-  border: 2px solid ${props => props.hasMissedCall ? '#6c757d' : 'transparent'};
+  border: 2px solid ${props => props.hasMissedCall ? '#f39c12' : 'transparent'};
   position: relative;
   opacity: ${props => props.disabled ? 0.5 : 1};
+  box-shadow: ${props => props.hasMissedCall ? '0 4px 15px rgba(243, 156, 18, 0.5)' : 'none'};
 
   &:hover {
     transform: ${props => props.disabled ? 'none' : 'translateY(-5px)'};
     border-color: ${props => {
       if (props.disabled) return 'transparent';
-      if (props.hasMissedCall) return '#95a5a6';
+      if (props.hasMissedCall) return '#f1c40f';
       return '#632ce4';
     }};
     box-shadow: ${props => {
       if (props.disabled) return 'none';
-      if (props.hasMissedCall) return '0 8px 20px rgba(108, 117, 125, 0.3)';
+      if (props.hasMissedCall) return '0 8px 25px rgba(243, 156, 18, 0.7)';
       return '0 8px 20px rgba(99, 44, 228, 0.3)';
     }};
   }
@@ -163,11 +164,11 @@ const StatusText = styled.p`
 `;
 
 const MissedCallText = styled.p`
-  color: #6c757d;
+  color: #fff;
   margin: 0.5rem 0 0 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-style: italic;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 `;
 
 const DeleteIcon = styled.div`
@@ -305,16 +306,16 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
     const loadMissedCalls = () => {
       const savedMissedCalls = localStorage.getItem('missedCalls');
       if (savedMissedCalls) {
-        console.log('📵 Appels manqués chargés:', savedMissedCalls);
+        console.log('Appels manqués chargés:', savedMissedCalls);
         setMissedCalls(JSON.parse(savedMissedCalls));
       }
     };
     
     loadMissedCalls();
     
-    // Écouter les mises à jour des appels manqués
+    // Écouter les mises Ã  jour des appels manqués
     const handleMissedCallUpdate = () => {
-      console.log('🔄 Mise à jour des appels manqués détectée');
+      console.log('Mise à jour des appels manqués détectée');
       loadMissedCalls();
     };
     
@@ -442,7 +443,7 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   };
 
   const handleCallContact = (contact) => {
-    // Empêcher de lancer un nouvel appel si déjà en appel
+    // Empêcher de lancer un nouvel appel si déjÃ  en appel
     if (isInCall) {
       alert('Vous êtes déjà en appel. Raccrochez d\'abord avant d\'en démarrer un nouveau.');
       return;
@@ -487,10 +488,34 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   };
 
   const formatMissedCallTime = (timestamp) => {
-    const date = new Date(timestamp);
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${hours}h${minutes}`;
+    const now = new Date();
+    const callTime = new Date(timestamp);
+    const diffMs = now - callTime;
+    
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffMinutes < 1) {
+      return "à l'instant";
+    } else if (diffMinutes < 60) {
+      return `il y a ${diffMinutes}min`;
+    } else if (diffHours < 24) {
+      const remainingMinutes = diffMinutes % 60;
+      if (remainingMinutes === 0) {
+        return `il y a ${diffHours}h`;
+      }
+      return `il y a ${diffHours}h${remainingMinutes}min`;
+    } else {
+      const remainingHours = diffHours % 24;
+      const remainingMinutes = diffMinutes % 60;
+      if (remainingHours === 0 && remainingMinutes === 0) {
+        return `il y a ${diffDays}j`;
+      } else if (remainingMinutes === 0) {
+        return `il y a ${diffDays}j ${remainingHours}h`;
+      }
+      return `il y a ${diffDays}j ${remainingHours}h${remainingMinutes}min`;
+    }
   };
 
   const hasMissedCall = (contactEmail) => {
@@ -539,7 +564,7 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
                 <ContactName>{contact.prenom}</ContactName>
                 {missed ? (
                   <MissedCallText>
-                    Appel manqué à {formatMissedCallTime(missedCalls[contact.email].timestamp)}
+                    Appel manqué {formatMissedCallTime(missedCalls[contact.email].timestamp)}
                   </MissedCallText>
                 ) : (
                   <StatusText status={status}>
