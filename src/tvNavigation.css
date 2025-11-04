@@ -1,0 +1,92 @@
+/* ========================================
+   NAVIGATION TV - STYLES GÉNÉRAUX
+   ======================================== */
+
+/* Style par défaut pour toutes les pages (Contacts, Photos, etc.) */
+.tv-focused {
+  outline: 4px solid #632ce4 !important;
+  outline-offset: 4px;
+  box-shadow: 0 0 20px rgba(99, 44, 228, 0.8) !important;
+  transform: scale(1.05);
+  transition: all 0.2s ease;
+  z-index: 100 !important;
+  position: relative;
+}
+
+/* Animation pour le focus général */
+@keyframes tv-focus-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(99, 44, 228, 0.8);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(99, 44, 228, 1);
+  }
+}
+
+.tv-focused {
+  animation: tv-focus-pulse 2s ease-in-out infinite;
+}
+
+/* ========================================
+   STYLE SPÉCIFIQUE SIDEBAR
+   ======================================== */
+
+/* Style pour la sidebar uniquement - surbrillance subtile */
+nav .tv-focused {
+  /* Annuler les styles par défaut pour la sidebar */
+  outline: none !important;
+  outline-offset: 0;
+  box-shadow: none !important;
+  transform: none;
+  animation: none;
+  
+  /* Appliquer un style subtil */
+  background: rgba(99, 44, 228, 0.3) !important;
+  border-left: 4px solid #632ce4 !important;
+  position: relative;
+}
+
+/* Animation subtile pour la sidebar */
+@keyframes sidebar-glow {
+  0%, 100% {
+    background: rgba(99, 44, 228, 0.3);
+    border-left-color: #632ce4;
+  }
+  50% {
+    background: rgba(99, 44, 228, 0.5);
+    border-left-color: #9d50bb;
+  }
+}
+
+nav .tv-focused {
+  animation: sidebar-glow 2s ease-in-out infinite;
+}
+
+/* Effet de glow sur le texte dans la sidebar */
+nav .tv-focused span {
+  color: #fff !important;
+  text-shadow: 0 0 10px rgba(99, 44, 228, 0.8);
+}
+
+/* ========================================
+   ÉLÉMENTS NAVIGABLES
+   ======================================== */
+
+/* Assurer que les éléments navigables ont un cursor pointer */
+[data-tv-navigable] {
+  cursor: pointer;
+}
+
+/* ========================================
+   TRANSITIONS DOUCES
+   ======================================== */
+
+/* Transitions pour tous les éléments navigables */
+[data-tv-navigable] {
+  transition: all 0.2s ease;
+}
+
+/* Éviter le conflit avec les hover */
+[data-tv-navigable]:hover {
+  /* Le hover ne doit pas interférer avec le focus TV */
+}

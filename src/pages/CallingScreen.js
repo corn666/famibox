@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
+import useTVNavigation from '../hooks/useTVNavigation';
 
 const pulse = keyframes`
   0%, 100% { 
@@ -111,13 +112,22 @@ const ButtonWrapper = styled.div`
 `;
 
 const CallingScreen = ({ contactName, onCancel }) => {
+  const containerRef = useRef(null);
+  
+  // Navigation TV
+  useTVNavigation(containerRef, {
+    enabled: true,
+    onBack: onCancel, // Bouton retour = annuler
+    initialFocusIndex: 0
+  });
+
   const getInitials = (name) => {
     if (!name) return '?';
     return name.substring(0, 2).toUpperCase();
   };
 
   return (
-    <Container>
+    <Container ref={containerRef}>
       <ContactAvatar>{getInitials(contactName)}</ContactAvatar>
       <ContactName>{contactName || 'Contact'}</ContactName>
       <CallStatus>
@@ -128,7 +138,10 @@ const CallingScreen = ({ contactName, onCancel }) => {
       </CallStatus>
       
       <ButtonWrapper>
-        <CancelButton onClick={onCancel}>
+        <CancelButton 
+          onClick={onCancel}
+          data-tv-navigable
+        >
           ✕
         </CancelButton>
         <ButtonLabel>Annuler</ButtonLabel>

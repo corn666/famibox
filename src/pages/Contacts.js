@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import { SocketContext } from '../context/SocketContext';
 import * as FaIcons from 'react-icons/fa';
+import useTVNavigation from '../hooks/useTVNavigation';
 
 const Container = styled.div`
   padding: 2rem;
@@ -50,7 +51,7 @@ const InCallWarning = styled.div`
   box-shadow: 0 4px 15px rgba(243, 156, 18, 0.3);
 
   &::before {
-    content: 'ðŸ“ž';
+    content: '📞';
     font-size: 1.5rem;
   }
 `;
@@ -99,9 +100,9 @@ const OnlineStatus = styled.div`
   height: 12px;
   border-radius: 50%;
   background: ${props => {
-    if (props.status === 'inCall') return '#f39c12'; // Orange
-    if (props.status === 'online') return '#27ae60'; // Vert
-    return '#e74c3c'; // Rouge
+    if (props.status === 'inCall') return '#f39c12';
+    if (props.status === 'online') return '#27ae60';
+    return '#e74c3c';
   }};
   box-shadow: 0 0 10px ${props => {
     if (props.status === 'inCall') return 'rgba(243, 156, 18, 0.8)';
@@ -143,13 +144,6 @@ const ContactName = styled.h3`
   color: #fff;
   margin: 0.5rem 0;
   font-size: 1.2rem;
-`;
-
-const ContactEmail = styled.p`
-  color: #888;
-  margin: 0;
-  font-size: 0.9rem;
-  word-break: break-word;
 `;
 
 const StatusText = styled.p`
@@ -295,27 +289,38 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   const [error, setError] = useState('');
   const [onlineUsers, setOnlineUsers] = useState(new Set());
   const [usersInCall, setUsersInCall] = useState(new Set());
-  const [missedCalls, setMissedCalls] = useState({}); // Nouveau state : { email: { timestamp, callerName } }
+  const [missedCalls, setMissedCalls] = useState({});
   const { user } = useContext(AuthContext);
   const { socket } = useContext(SocketContext);
+  
+  // Ref pour le container de navigation TV
+  const containerRef = useRef(null);
+  
+  // Activer la navigation TV
+  // S'active automatiquement quand sidebar se ferme grâce à enabled: !sidebar
+  useTVNavigation(containerRef, {
+    enabled: !showModal && !sidebar, // Actif quand sidebar fermée ET modal fermée
+    onBack: () => {
+      if (setCurrentPage) {
+        setCurrentPage('home');
+      }
+    },
+    initialFocusIndex: 1 // Commencer sur le premier contact
+  });
 
   useEffect(() => {
     loadContacts();
     
-    // Charger les appels manqués depuis localStorage
     const loadMissedCalls = () => {
       const savedMissedCalls = localStorage.getItem('missedCalls');
       if (savedMissedCalls) {
-        console.log('Appels manqués chargés:', savedMissedCalls);
         setMissedCalls(JSON.parse(savedMissedCalls));
       }
     };
     
     loadMissedCalls();
     
-    // Écouter les mises Ã  jour des appels manqués
     const handleMissedCallUpdate = () => {
-      console.log('Mise à jour des appels manqués détectée');
       loadMissedCalls();
     };
     
@@ -329,31 +334,26 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   useEffect(() => {
     if (socket) {
       socket.emit('request-online-users');
-      socket.emit('request-users-in-call'); // Demander aussi les utilisateurs en appel
+      socket.emit('request-users-in-call');
 
       socket.on('online-users-list', (users) => {
-        console.log('Liste des utilisateurs en ligne:', users);
         setOnlineUsers(new Set(users));
       });
 
       socket.on('users-in-call-list', (users) => {
-        console.log('Liste des utilisateurs en appel:', users);
         setUsersInCall(new Set(users));
       });
 
       socket.on('user-online', (email) => {
-        console.log('Utilisateur en ligne:', email);
         setOnlineUsers(prev => new Set([...prev, email]));
       });
 
       socket.on('user-offline', (email) => {
-        console.log('Utilisateur hors ligne:', email);
         setOnlineUsers(prev => {
           const newSet = new Set(prev);
           newSet.delete(email);
           return newSet;
         });
-        // Retirer aussi de la liste "en appel" si présent
         setUsersInCall(prev => {
           const newSet = new Set(prev);
           newSet.delete(email);
@@ -361,9 +361,7 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
         });
       });
 
-      // Écouter les changements de statut d'appel
       socket.on('user-call-status-changed', (data) => {
-        console.log('Statut d\'appel changé:', data);
         if (data.inCall) {
           setUsersInCall(prev => new Set([...prev, data.email]));
         } else {
@@ -443,13 +441,11 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   };
 
   const handleCallContact = (contact) => {
-    // Empêcher de lancer un nouvel appel si déjÃ  en appel
     if (isInCall) {
       alert('Vous êtes déjà en appel. Raccrochez d\'abord avant d\'en démarrer un nouveau.');
       return;
     }
 
-    // Effacer l'appel manqué quand on rappelle
     if (missedCalls[contact.email]) {
       const newMissedCalls = { ...missedCalls };
       delete newMissedCalls[contact.email];
@@ -523,10 +519,13 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   };
 
   return (
-    <Container>
+    <Container ref={containerRef}>
       <Header>
         <Title>Mes Contacts</Title>
-        <AddButton onClick={() => setShowModal(true)}>
+        <AddButton 
+          onClick={() => setShowModal(true)}
+          data-tv-navigable
+        >
           + Ajouter un contact
         </AddButton>
       </Header>
@@ -558,6 +557,7 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
                 onClick={() => handleCallContact(contact)}
                 disabled={isInCall}
                 hasMissedCall={missed}
+                data-tv-navigable
               >
                 <OnlineStatus status={status} />
                 <Avatar>{getInitials(contact.prenom)}</Avatar>

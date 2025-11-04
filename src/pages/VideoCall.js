@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useContext } from 'react';
+import React, { useEffect, useState, useCallback, useContext, useRef } from 'react';
 import styled from 'styled-components';
 import { SocketContext } from '../context/SocketContext';
 import { AuthContext } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
 import CallingScreen from './CallingScreen';
+import useTVNavigation from '../hooks/useTVNavigation';
 
 const PiPContainer = styled.div`
   position: fixed;
@@ -85,6 +86,55 @@ const PiPEndButton = styled.button`
   }
 `;
 
+const ControlsContainer = styled.div`
+  position: absolute;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2rem;
+  z-index: 100;
+`;
+
+const ControlButton = styled.button`
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  
+  ${props => props.danger ? `
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: #fff;
+  ` : `
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    backdrop-filter: blur(10px);
+  `}
+  
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: ${props => props.danger 
+      ? '0 6px 20px rgba(231, 76, 60, 0.5)' 
+      : '0 6px 20px rgba(255, 255, 255, 0.3)'};
+  }
+  
+  &:active {
+    transform: scale(0.95);
+  }
+  
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
 const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
   const { socket } = useContext(SocketContext);
   const { user } = useContext(AuthContext);
@@ -103,17 +153,19 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
 
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
-  const [streamUpdate, setStreamUpdate] = useState(0); // Pour forcer le re-render
-  const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false); // Nouveau state
+  const [streamUpdate, setStreamUpdate] = useState(0);
+  const [isWaitingForAnswer, setIsWaitingForAnswer] = useState(false);
+  
+  const controlsRef = useRef(null);
 
   const roomId = callData?.roomId;
   const config = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
+  // Déclarer endCall AVANT useTVNavigation
   const endCall = useCallback(() => {
     console.log('🔴 End call - isCallConnected:', isCallConnected);
     
     if (socket && roomId) {
-      // Si l'appel n'est pas encore connecté (pas de flux vidéo établi), c'est une annulation
       if (!isCallConnected && callData) {
         console.log('📤 Envoi cancel-call vers', callData.contactEmail);
         socket.emit('cancel-call', { 
@@ -121,7 +173,6 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
           roomId 
         });
       } else {
-        // Sinon c'est un vrai appel qui se termine
         console.log('📤 Envoi call-ended');
         socket.emit('call-ended', { roomId });
       }
@@ -133,26 +184,29 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
       onEndCall();
     }
   }, [socket, roomId, isCallConnected, contextEndCall, onEndCall, callData]);
+  
+  // Navigation TV pour les contrôles (uniquement en mode plein écran ET quand connecté)
+  useTVNavigation(controlsRef, {
+    enabled: !isPiP && isCallConnected,
+    onBack: endCall,
+    initialFocusIndex: 0
+  });
 
-  // Attacher les streams aux éléments vidéo quand ils sont prêts
   useEffect(() => {
     const videoElements = document.querySelectorAll('video');
     
     videoElements.forEach(video => {
-      // Vidéo locale (muted)
       if (video.muted && localStreamRef.current && !video.srcObject) {
         video.srcObject = localStreamRef.current;
         console.log('✅ Local video attached');
       }
-      // Vidéo distante (non muted)
       else if (!video.muted && remoteStreamRef.current && !video.srcObject) {
         video.srcObject = remoteStreamRef.current;
         console.log('✅ Remote video attached');
       }
     });
-  }, [streamUpdate, isPiP]); // Se déclenche à chaque mise à jour de stream ou changement de mode
+  }, [streamUpdate, isPiP]);
 
-  // Écouter l'événement call-ended
   useEffect(() => {
     if (socket) {
       const handleCallEnded = () => {
@@ -162,7 +216,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
         contextEndCall();
         
         setTimeout(() => {
-          setCallEnded(false); // Reset pour permettre un nouvel appel
+          setCallEnded(false);
           if (setCurrentPage) {
             setCurrentPage('contacts');
           }
@@ -188,7 +242,6 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
     }
   }, [socket, contextEndCall, setCurrentPage]);
 
-  // Initialiser l'appel une seule fois
   useEffect(() => {
     if (callData && !callStartedRef.current && socket && !hasSetupConnectionRef.current) {
       hasSetupConnectionRef.current = true;
@@ -208,7 +261,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
 
     try {
       callStartedRef.current = true;
-      setIsWaitingForAnswer(true); // Afficher l'écran d'attente
+      setIsWaitingForAnswer(true);
       console.log('📞 Initiation de l\'appel vers:', callData.contactEmail);
 
       socket.emit('call-user', {
@@ -252,7 +305,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
     
     localStreamRef.current = stream;
     console.log('✅ Local stream created');
-    setStreamUpdate(prev => prev + 1); // Forcer le re-render pour attacher le stream
+    setStreamUpdate(prev => prev + 1);
     
     const pc = new RTCPeerConnection(config);
     peerConnectionRef.current = pc;
@@ -276,14 +329,12 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
         console.log('📺 Setting remote stream');
         remoteStreamRef.current = event.streams[0];
         
-        // Marquer l'appel comme connecté dès qu'on reçoit le flux distant
         markCallAsConnected();
-        setIsWaitingForAnswer(false); // Masquer l'écran d'attente
+        setIsWaitingForAnswer(false);
         
-        // Notifier le serveur que l'appel est établi
         socket.emit('call-started', { roomId });
         
-        setStreamUpdate(prev => prev + 1); // Forcer le re-render pour attacher le stream
+        setStreamUpdate(prev => prev + 1);
       }
     };
 
@@ -397,7 +448,6 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
     );
   }
 
-  // Afficher l'écran d'attente si on attend que l'autre décroche
   if (isWaitingForAnswer && callData && !isPiP) {
     return (
       <CallingScreen 
@@ -464,7 +514,7 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
         overflow: 'hidden',
         background: 'black',
         width: sidebar ? 'calc(100vw - 150px)' : '100vw',
-        height: 'calc(100vh - 80px)',
+        height: '100vh',
         position: 'relative',
         transition: 'all 350ms',
       }}
@@ -499,42 +549,24 @@ const VideoCall = ({ sidebar, setCurrentPage, onEndCall, isPiP = false }) => {
           border: '2px solid #fff',
         }}
       />
-      <button
-        onClick={endCall}
-        style={{
-          position: 'absolute',
-          zIndex: 100,
-          top: '20px',
-          left: '20px',
-          background: '#e74c3c',
-          color: 'white',
-          padding: '10px 20px',
-          border: 'none',
-          borderRadius: '5px',
-          cursor: 'pointer',
-          fontSize: '1rem',
-        }}
-      >
-        Raccrocher
-      </button>
-      <button
-        onClick={toggleScreenShare}
-        disabled={!callStartedRef.current}
-        style={{
-          position: 'absolute',
-          zIndex: 100,
-          top: '80px',
-          left: '20px',
-          background: 'rgba(0,0,0,0.5)',
-          color: 'white',
-          padding: '10px',
-          border: 'none',
-          borderRadius: '5px',
-          cursor: !callStartedRef.current ? 'not-allowed' : 'pointer',
-        }}
-      >
-        {isScreenSharing ? 'Arrêter Partage' : 'Partager Écran'}
-      </button>
+      
+      <ControlsContainer ref={controlsRef}>
+        <ControlButton
+          onClick={endCall}
+          danger
+          data-tv-navigable
+        >
+          📞
+        </ControlButton>
+        
+        <ControlButton
+          onClick={toggleScreenShare}
+          disabled={!callStartedRef.current}
+          data-tv-navigable
+        >
+          {isScreenSharing ? '🖥️' : '📺'}
+        </ControlButton>
+      </ControlsContainer>
     </div>
   );
 };
