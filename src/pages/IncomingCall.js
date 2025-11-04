@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { SocketContext } from '../context/SocketContext';
+import useTVNavigation from '../hooks/useTVNavigation';
 
 const pulse = keyframes`
   0%, 100% { 
@@ -146,6 +147,14 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
   const [dots, setDots] = useState('');
   const { socket } = useContext(SocketContext);
   const audioRef = useRef(null);
+  const containerRef = useRef(null);
+  
+  // Navigation TV - Focus sur le bouton décrocher par défaut
+  useTVNavigation(containerRef, {
+    enabled: true,
+    onBack: onDecline, // Bouton retour = refuser
+    initialFocusIndex: 1 // Commencer sur "Décrocher" (index 1)
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -155,16 +164,14 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
     return () => clearInterval(interval);
   }, []);
 
-  // Jouer la sonnerie quand le composant s'affiche
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.loop = true; // Boucler la sonnerie
+      audioRef.current.loop = true;
       audioRef.current.play().catch(err => {
         console.error('Erreur lecture sonnerie:', err);
       });
     }
 
-    // Arrêter la sonnerie quand le composant se démonte
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
@@ -178,7 +185,6 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
   };
 
   const handleDecline = () => {
-    // Arrêter la sonnerie
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -194,7 +200,6 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
   };
 
   const handleAccept = () => {
-    // Arrêter la sonnerie
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
@@ -204,8 +209,7 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
   };
 
   return (
-    <Container>
-      {/* Élément audio caché pour la sonnerie */}
+    <Container ref={containerRef}>
       <audio ref={audioRef} src="/sounds/ringtone.mp3" />
       
       <CallerAvatar>{getInitials(callerName)}</CallerAvatar>
@@ -214,14 +218,20 @@ const IncomingCall = ({ callerName, callerEmail, roomId, onAccept, onDecline }) 
       
       <ButtonContainer>
         <ButtonWrapper>
-          <DeclineButton onClick={handleDecline}>
+          <DeclineButton 
+            onClick={handleDecline}
+            data-tv-navigable
+          >
             ✖
           </DeclineButton>
           <ButtonLabel>Refuser</ButtonLabel>
         </ButtonWrapper>
         
         <ButtonWrapper>
-          <AcceptButton onClick={handleAccept}>
+          <AcceptButton 
+            onClick={handleAccept}
+            data-tv-navigable
+          >
             ✓
           </AcceptButton>
           <ButtonLabel>Décrocher</ButtonLabel>

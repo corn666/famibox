@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import styled from 'styled-components';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 import { SocketContext } from '../context/SocketContext';
+import useTVNavigation from '../hooks/useTVNavigation';
 
 const Container = styled.div`
   padding: 2rem;
@@ -358,6 +359,34 @@ export const Photos = ({ sidebar }) => {
   const [uploading, setUploading] = useState(false);
   const { user } = useContext(AuthContext);
   const { newMediaNotification, clearMediaNotification } = useContext(SocketContext);
+  
+  // Refs pour navigation TV
+  const containerRef = useRef(null);
+  const modalRef = useRef(null);
+  const viewerRef = useRef(null);
+  
+  // Navigation TV pour la page principale
+  useTVNavigation(containerRef, {
+    enabled: !showUploadModal && !viewingMedia && !sidebar,
+    onBack: () => {
+      // Navigation vers home ou autre
+    },
+    initialFocusIndex: 0
+  });
+  
+  // Navigation TV pour le modal
+  useTVNavigation(modalRef, {
+    enabled: showUploadModal,
+    onBack: () => setShowUploadModal(false),
+    initialFocusIndex: 0
+  });
+  
+  // Navigation TV pour la visionneuse
+  useTVNavigation(viewerRef, {
+    enabled: viewingMedia !== null,
+    onBack: () => setViewingMedia(null),
+    initialFocusIndex: 0
+  });
 
   useEffect(() => {
     loadContacts();
@@ -448,7 +477,6 @@ export const Photos = ({ sidebar }) => {
   const handleViewMedia = async (media) => {
     setViewingMedia(media);
 
-    // Marquer comme consulté si pas encore vu
     if (!media.viewed) {
       try {
         const token = localStorage.getItem('token');
@@ -504,7 +532,6 @@ export const Photos = ({ sidebar }) => {
     return fileType.startsWith('video/');
   };
 
-  // Fonction pour générer l'URL avec le token
   const getMediaUrl = (mediaId) => {
     const token = localStorage.getItem('token');
     return `https://famibox.cazapp.fr:3000/api/media/stream/${mediaId}?token=${token}`;
@@ -513,16 +540,23 @@ export const Photos = ({ sidebar }) => {
   const unviewedCount = receivedMedia.filter(m => !m.viewed).length;
 
   return (
-    <Container>
+    <Container ref={containerRef}>
       <Header>
         <Title>Photos & Vidéos {unviewedCount > 0 && `(${unviewedCount} nouveaux)`}</Title>
-        <UploadButton onClick={() => setShowUploadModal(true)}>
+        <UploadButton 
+          onClick={() => setShowUploadModal(true)}
+          data-tv-navigable
+        >
           📤 Partager des fichiers
         </UploadButton>
       </Header>
 
       <TabContainer>
-        <Tab active={activeTab === 'received'} onClick={() => setActiveTab('received')}>
+        <Tab 
+          active={activeTab === 'received'} 
+          onClick={() => setActiveTab('received')}
+          data-tv-navigable
+        >
           📥 Fichiers reçus
         </Tab>
       </TabContainer>
@@ -541,6 +575,7 @@ export const Photos = ({ sidebar }) => {
                   key={media.id} 
                   onClick={() => handleViewMedia(media)}
                   unviewed={!media.viewed}
+                  data-tv-navigable
                 >
                   <MediaPreview>
                     {isVideo(media.file_type) ? (
@@ -570,10 +605,9 @@ export const Photos = ({ sidebar }) => {
         </>
       )}
 
-      {/* Modal d'upload */}
       {showUploadModal && (
         <Modal onClick={() => setShowUploadModal(false)}>
-          <ModalContent onClick={(e) => e.stopPropagation()}>
+          <ModalContent onClick={(e) => e.stopPropagation()} ref={modalRef}>
             <ModalTitle>Partager des fichiers</ModalTitle>
             {error && <Error>{error}</Error>}
             
@@ -581,6 +615,7 @@ export const Photos = ({ sidebar }) => {
               value={selectedRecipient}
               onChange={(e) => setSelectedRecipient(e.target.value)}
               disabled={uploading}
+              data-tv-navigable
             >
               <option value="">Sélectionner un destinataire</option>
               {contacts.map(contact => (
@@ -598,7 +633,7 @@ export const Photos = ({ sidebar }) => {
               onChange={handleFileSelect}
               disabled={uploading}
             />
-            <FileInputLabel htmlFor="file-upload">
+            <FileInputLabel htmlFor="file-upload" data-tv-navigable>
               {selectedFiles.length === 0 
                 ? '📁 Cliquez pour sélectionner des fichiers' 
                 : `${selectedFiles.length} fichier(s) sélectionné(s)`}
@@ -611,7 +646,11 @@ export const Photos = ({ sidebar }) => {
                     <span>
                       {file.name} ({formatFileSize(file.size)})
                     </span>
-                    <RemoveButton onClick={() => removeFile(index)} disabled={uploading}>
+                    <RemoveButton 
+                      onClick={() => removeFile(index)} 
+                      disabled={uploading}
+                      data-tv-navigable
+                    >
                       ✕
                     </RemoveButton>
                   </FileItem>
@@ -620,10 +659,19 @@ export const Photos = ({ sidebar }) => {
             )}
 
             <ModalButtons>
-              <ModalButton onClick={() => setShowUploadModal(false)} disabled={uploading}>
+              <ModalButton 
+                onClick={() => setShowUploadModal(false)} 
+                disabled={uploading}
+                data-tv-navigable
+              >
                 Annuler
               </ModalButton>
-              <ModalButton primary onClick={handleUpload} disabled={uploading}>
+              <ModalButton 
+                primary 
+                onClick={handleUpload} 
+                disabled={uploading}
+                data-tv-navigable
+              >
                 {uploading ? 'Envoi en cours...' : 'Envoyer'}
               </ModalButton>
             </ModalButtons>
@@ -631,10 +679,14 @@ export const Photos = ({ sidebar }) => {
         </Modal>
       )}
 
-      {/* Visionneuse de média */}
       {viewingMedia && (
-        <MediaViewer onClick={() => setViewingMedia(null)}>
-          <CloseButton onClick={() => setViewingMedia(null)}>✕</CloseButton>
+        <MediaViewer onClick={() => setViewingMedia(null)} ref={viewerRef}>
+          <CloseButton 
+            onClick={() => setViewingMedia(null)}
+            data-tv-navigable
+          >
+            ✕
+          </CloseButton>
           <MediaViewerContent onClick={(e) => e.stopPropagation()}>
             {isVideo(viewingMedia.file_type) ? (
               <video 
@@ -649,7 +701,10 @@ export const Photos = ({ sidebar }) => {
               />
             )}
           </MediaViewerContent>
-          <DownloadButton onClick={() => handleDownload(viewingMedia)}>
+          <DownloadButton 
+            onClick={() => handleDownload(viewingMedia)}
+            data-tv-navigable
+          >
             ⬇️ Télécharger
           </DownloadButton>
         </MediaViewer>

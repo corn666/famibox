@@ -1,4 +1,5 @@
 import './App.css';
+import './tvNavigation.css';
 import Sidebar from './components/Sidebar';
 import { Photos } from './pages/Photos';
 import { Sante } from './pages/Sante';
@@ -23,21 +24,17 @@ const useMissedCallsHandler = () => {
       const handleMissedCall = (data) => {
         console.log('📵 Appel manqué reçu dans App.js:', data);
         
-        // Récupérer les appels manqués existants
         const savedMissedCalls = localStorage.getItem('missedCalls');
         const missedCalls = savedMissedCalls ? JSON.parse(savedMissedCalls) : {};
         
-        // Ajouter le nouvel appel manqué
         missedCalls[data.callerEmail] = {
           timestamp: data.timestamp,
           callerName: data.callerName
         };
         
-        // Sauvegarder
         localStorage.setItem('missedCalls', JSON.stringify(missedCalls));
         console.log('✅ Appel manqué sauvegardé dans localStorage');
         
-        // Émettre un événement personnalisé pour que Contacts.js se mette à jour
         window.dispatchEvent(new CustomEvent('missedCallUpdated'));
       };
 
@@ -53,7 +50,7 @@ const useMissedCallsHandler = () => {
 
 const NotificationBanner = styled.div`
   position: fixed;
-  top: 100px;
+  top: 20px;
   right: 20px;
   background: linear-gradient(135deg, #632ce4, #9d50bb);
   color: #fff;
@@ -88,6 +85,25 @@ const NotificationMessage = styled.p`
   opacity: 0.9;
 `;
 
+const HelpText = styled.div`
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  
+  &::before {
+    content: '💡';
+  }
+`;
+
 function App() {
   return (
     <AuthProvider>
@@ -103,6 +119,7 @@ function App() {
 const AppContent = () => {
   const [sidebar, setSidebar] = useState(false);
   const [currentPage, setCurrentPage] = useState('login');
+  const [showHelp, setShowHelp] = useState(true);
   const { user } = useContext(AuthContext);
   const { isInCall, callData, startCall, endCall } = useCall();
   const { 
@@ -118,10 +135,35 @@ const AppContent = () => {
   const toggleSidebar = () => setSidebar(!sidebar);
   const openSidebar = () => setSidebar(true);
 
-  // Activer la gestion des appels manqués
   useMissedCallsHandler();
 
-  // Écouter l'annulation d'appel
+  // Raccourci clavier global pour toggle la sidebar
+  useEffect(() => {
+    const handleGlobalKeyPress = (e) => {
+      if (e.key === 'm' || e.key === 'M' || e.key === 'ContextMenu') {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleSidebar();
+        console.log('🎮 Toggle sidebar via raccourci clavier');
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyPress);
+    
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyPress);
+    };
+  }, [sidebar]);
+
+  // Masquer l'aide après 10 secondes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowHelp(false);
+    }, 10000);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
   useEffect(() => {
     if (socket) {
       const handleCallCancelled = (data) => {
@@ -137,7 +179,6 @@ const AppContent = () => {
     }
   }, [socket, clearIncomingCall]);
 
-  // Vérifier si l'utilisateur est déjà connecté au chargement
   useEffect(() => {
     if (user && currentPage === 'login') {
       setCurrentPage('home');
@@ -145,7 +186,6 @@ const AppContent = () => {
     }
   }, [user]);
 
-  // Auto-masquer les notifications après 5 secondes
   useEffect(() => {
     if (newMediaNotification) {
       const timer = setTimeout(() => {
@@ -191,7 +231,6 @@ const AppContent = () => {
   };
 
   const renderPage = () => {
-    // Afficher l'écran d'appel entrant en priorité
     if (incomingCall) {
       return (
         <IncomingCall
@@ -246,7 +285,6 @@ const AppContent = () => {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Sidebar sidebar={sidebar} toggleSidebar={toggleSidebar} setCurrentPage={setCurrentPage} />
       
-      {/* Notifications pour nouveaux médias */}
       {newMediaNotification && (
         <NotificationBanner onClick={handleMediaNotificationClick}>
           <NotificationTitle>📸 Nouveaux médias reçus !</NotificationTitle>
@@ -256,7 +294,6 @@ const AppContent = () => {
         </NotificationBanner>
       )}
 
-      {/* Notification de consultation */}
       {mediaViewedNotification && (
         <NotificationBanner onClick={clearViewedNotification}>
           <NotificationTitle>👁️ Média consulté</NotificationTitle>
@@ -266,7 +303,6 @@ const AppContent = () => {
         </NotificationBanner>
       )}
 
-      {/* Appel en Picture-in-Picture si on est en appel mais pas sur la page appels */}
       {isInCall && currentPage !== 'appels' && (
         <VideoCall 
           sidebar={sidebar}
@@ -276,10 +312,17 @@ const AppContent = () => {
         />
       )}
 
+      {/* Aide contextuelle */}
+      {showHelp && user && !sidebar && (
+        <HelpText onClick={() => setShowHelp(false)}>
+          Appuyez sur <strong>M</strong> pour ouvrir le menu
+        </HelpText>
+      )}
+
+      {/* Contenu principal - PLUS de marginTop car plus de navbar */}
       <div
         style={{
           marginLeft: sidebar ? '150px' : '0',
-          marginTop: '80px',
           flexGrow: 1,
           transition: 'margin-left 350ms',
         }}

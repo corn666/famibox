@@ -19,16 +19,23 @@ const SidebarLink = styled.div`
   }
 `;
 
-const SubMenu = ({ item, setCurrentPage }) => {
+const SubMenu = ({ item, setCurrentPage, toggleSidebar }) => {
+  const handleClick = () => {
+    setCurrentPage(item.path);
+    // Fermer la sidebar après avoir changé de page
+    if (toggleSidebar) {
+      toggleSidebar();
+    }
+  };
+
   return (
-    <SidebarLink onClick={() => setCurrentPage(item.path)}>
+    <SidebarLink onClick={handleClick} data-tv-navigable>
       <div>
         {item.icon}
         <span style={{ marginLeft: '16px' }}>{item.title}</span>
       </div>
     </SidebarLink>
   );
-  // Commentaire : Élément de menu qui change la page via setCurrentPage sans modifier l'URL.
 };
 
 export default SubMenu;
