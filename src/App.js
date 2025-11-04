@@ -140,7 +140,7 @@ const AppContent = () => {
   // Raccourci clavier global pour toggle la sidebar
   useEffect(() => {
     const handleGlobalKeyPress = (e) => {
-      if (e.key === 'm' || e.key === 'M' || e.key === 'ContextMenu') {
+      if (e.key === 'ContextMenu') {
         e.preventDefault();
         e.stopPropagation();
         toggleSidebar();
