@@ -10,6 +10,44 @@ const Container = styled.div`
   padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
+  position: relative;
+`;
+
+const MenuButton = styled.button`
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, #632ce4, #9d50bb);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  display: ${props => props.show ? 'flex' : 'none'};
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 999;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(99, 44, 228, 0.4);
+
+  &:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(99, 44, 228, 0.6);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const MenuLine = styled.div`
+  width: 25px;
+  height: 3px;
+  background: #fff;
+  border-radius: 2px;
+  transition: all 0.3s ease;
 `;
 
 const Header = styled.div`
@@ -282,7 +320,7 @@ const EmptyState = styled.div`
   color: #666;
 `;
 
-const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
+const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall, toggleSidebar }) => {
   const [contacts, setContacts] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [newContact, setNewContact] = useState({ email: '', prenom: '' });
@@ -293,19 +331,16 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
   const { user } = useContext(AuthContext);
   const { socket } = useContext(SocketContext);
   
-  // Ref pour le container de navigation TV
   const containerRef = useRef(null);
   
-  // Activer la navigation TV
-  // S'active automatiquement quand sidebar se ferme grâce à enabled: !sidebar
   useTVNavigation(containerRef, {
-    enabled: !showModal && !sidebar, // Actif quand sidebar fermée ET modal fermée
+    enabled: !showModal && !sidebar,
     onBack: () => {
       if (setCurrentPage) {
         setCurrentPage('home');
       }
     },
-    initialFocusIndex: 1 // Commencer sur le premier contact
+    initialFocusIndex: 1
   });
 
   useEffect(() => {
@@ -520,6 +555,16 @@ const Contacts = ({ sidebar, setCurrentPage, setCallData, isInCall }) => {
 
   return (
     <Container ref={containerRef}>
+      <MenuButton 
+        show={!sidebar} 
+        onClick={toggleSidebar}
+        data-tv-navigable
+      >
+        <MenuLine />
+        <MenuLine />
+        <MenuLine />
+      </MenuButton>
+
       <Header>
         <Title>Mes Contacts</Title>
         <AddButton 

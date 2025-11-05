@@ -9,6 +9,44 @@ const Container = styled.div`
   padding: 2rem;
   max-width: 1400px;
   margin: 0 auto;
+  position: relative;
+`;
+
+const MenuButton = styled.button`
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  width: 50px;
+  height: 50px;
+  background: linear-gradient(135deg, #632ce4, #9d50bb);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  display: ${props => props.show ? 'flex' : 'none'};
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  z-index: 999;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(99, 44, 228, 0.4);
+
+  &:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(99, 44, 228, 0.6);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`;
+
+const MenuLine = styled.div`
+  width: 25px;
+  height: 3px;
+  background: #fff;
+  border-radius: 2px;
+  transition: all 0.3s ease;
 `;
 
 const Header = styled.div`
@@ -347,7 +385,7 @@ const DownloadButton = styled.button`
   }
 `;
 
-export const Photos = ({ sidebar }) => {
+export const Photos = ({ sidebar, toggleSidebar }) => {
   const [activeTab, setActiveTab] = useState('received');
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -360,28 +398,22 @@ export const Photos = ({ sidebar }) => {
   const { user } = useContext(AuthContext);
   const { newMediaNotification, clearMediaNotification } = useContext(SocketContext);
   
-  // Refs pour navigation TV
   const containerRef = useRef(null);
   const modalRef = useRef(null);
   const viewerRef = useRef(null);
   
-  // Navigation TV pour la page principale
   useTVNavigation(containerRef, {
     enabled: !showUploadModal && !viewingMedia && !sidebar,
-    onBack: () => {
-      // Navigation vers home ou autre
-    },
+    onBack: () => {},
     initialFocusIndex: 0
   });
   
-  // Navigation TV pour le modal
   useTVNavigation(modalRef, {
     enabled: showUploadModal,
     onBack: () => setShowUploadModal(false),
     initialFocusIndex: 0
   });
   
-  // Navigation TV pour la visionneuse
   useTVNavigation(viewerRef, {
     enabled: viewingMedia !== null,
     onBack: () => setViewingMedia(null),
@@ -541,6 +573,16 @@ export const Photos = ({ sidebar }) => {
 
   return (
     <Container ref={containerRef}>
+      <MenuButton 
+        show={!sidebar} 
+        onClick={toggleSidebar}
+        data-tv-navigable
+      >
+        <MenuLine />
+        <MenuLine />
+        <MenuLine />
+      </MenuButton>
+
       <Header>
         <Title>Photos & Vidéos {unviewedCount > 0 && `(${unviewedCount} nouveaux)`}</Title>
         <UploadButton 
@@ -609,7 +651,7 @@ export const Photos = ({ sidebar }) => {
         <Modal onClick={() => setShowUploadModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()} ref={modalRef}>
             <ModalTitle>Partager des fichiers</ModalTitle>
-            {error && <Error>{error}</Error>}
+            {error && <e>{error}</e>}
             
             <Select 
               value={selectedRecipient}
