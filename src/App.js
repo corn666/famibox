@@ -266,12 +266,23 @@ const AppContent = () => {
             setCurrentPage={setCurrentPage} 
             setCallData={startCall}
             isInCall={isInCall}
+            toggleSidebar={toggleSidebar}
           />
         );
       case 'photos':
-        return <Photos sidebar={sidebar} />;
+        return (
+          <Photos 
+            sidebar={sidebar} 
+            toggleSidebar={toggleSidebar}
+          />
+        );
       case 'sante':
-        return <Sante sidebar={sidebar} />;
+        return (
+          <Sante 
+            sidebar={sidebar}
+            toggleSidebar={toggleSidebar}
+          />
+        );
       case 'login':
         return <Login openSidebar={openSidebar} setCurrentPage={setCurrentPage} />;
       case 'register':
@@ -319,7 +330,7 @@ const AppContent = () => {
         </HelpText>
       )}
 
-      {/* Contenu principal - PLUS de marginTop car plus de navbar */}
+      {/* Contenu principal */}
       <div
         style={{
           marginLeft: sidebar ? '150px' : '0',
